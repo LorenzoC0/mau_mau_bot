@@ -32,7 +32,7 @@ from internationalization import _, __
 
 def add_choose_color(results, game):
     """Add choose color options"""
-    for color in c.COLORS:
+    for color in game.colors:
         results.append(
             InlineQueryResultArticle(
                 id=color,
@@ -140,6 +140,13 @@ def add_mode_text(results):
             InputTextMessageContent(_('Text ✍️'))
         )
     )
+
+
+def add_mode_flip(results):
+    """Add the UNO Flip mode selector."""
+    results.append(InlineQueryResultArticle(
+        "mode_flip", title=_("🔄 UNO Flip mode"),
+        input_message_content=InputTextMessageContent(_('UNO Flip 🔄'))))
     
     
 def add_draw(player, results):
@@ -199,19 +206,26 @@ def add_card(game, card, results, can_play):
     """Add an option that represents a card"""
 
     if can_play:
-        if game.mode != "text":
+        if game.mode not in ("text", "flip"):
             results.append(
                 Sticker(str(card), sticker_file_id=c.STICKERS[str(card)])
         )
-        if game.mode == "text":
+        if game.mode in ("text", "flip"):
             results.append(
-                Sticker(str(card), sticker_file_id=c.STICKERS[str(card)], input_message_content=InputTextMessageContent("Card Played: {card}".format(card=repr(card).replace('Draw Four', '+4').replace('Draw', '+2').replace('Colorchooser', 'Color Chooser')))
-        ))
+                InlineQueryResultArticle(
+                    str(card), title=repr(card),
+                    input_message_content=InputTextMessageContent(
+                        "Card Played: {card}".format(card=repr(card))))
+            )
     else:
-        results.append(
-            Sticker(str(uuid4()), sticker_file_id=c.STICKERS_GREY[str(card)],
-                    input_message_content=game_info(game))
-        )
+        if game.mode == "flip":
+            results.append(InlineQueryResultArticle(
+                str(uuid4()), title=repr(card),
+                input_message_content=game_info(game)))
+        else:
+            results.append(
+                Sticker(str(uuid4()), sticker_file_id=c.STICKERS_GREY[str(card)],
+                        input_message_content=game_info(game)))
 
 
 def game_info(game):

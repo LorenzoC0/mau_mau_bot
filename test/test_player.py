@@ -164,3 +164,23 @@ class Test(unittest.TestCase):
         self.game.choose_color(c.GREEN)
 
         self.assertFalse(self.game.current_player.prev.bluffing)
+
+    def test_flip_deck_and_side_change(self):
+        self.game.set_mode('flip')
+        p0 = Player(self.game, "Player 0")
+        Player(self.game, "Player 1")
+        self.game.start()
+
+        self.assertEqual(len(self.game.deck.cards), 111)
+        self.assertEqual(self.game.side, 'light')
+        self.assertTrue(all(card._dark for card in self.game.deck.cards))
+
+        p0.cards = [c.Card(c.RED, c.FLIP, dark=(c.PINK, c.FLIP, None))]
+        self.game.last_card = c.Card(c.RED, c.ONE,
+                                     dark=(c.PINK, c.ONE, None))
+        self.game.current_player = p0
+        p0.playable_cards()
+        p0.play(p0.cards[0])
+
+        self.assertEqual(self.game.side, 'dark')
+        self.assertEqual(self.game.last_card.color, c.PINK)

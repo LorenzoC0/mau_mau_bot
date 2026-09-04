@@ -58,9 +58,10 @@ class Deck(object):
 
     def dismiss(self, card):
         """Returns a card to the deck"""
-        if card.special:
+        if card and card.special:
             card.color = None
-        self.graveyard.append(card)
+        if card:
+            self.graveyard.append(card)
 
     def _fill_classic_(self):
         # Fill deck with the classic card set
@@ -86,3 +87,39 @@ class Deck(object):
             for _ in range(6):
                 self.cards.append(Card(None, None, special=special))
         self.shuffle()
+
+    def _fill_flip_(self):
+        """Build the 112 physical double-sided UNO Flip cards."""
+        self.cards.clear()
+        light = []
+        dark = []
+        light_colors = (c.BLUE, c.GREEN, c.RED, c.YELLOW)
+        dark_colors = (c.PINK, c.TEAL, c.ORANGE, c.PURPLE)
+
+        for color in light_colors:
+            for value in c.NUMBERS:
+                light.extend([(color, value, None)] * 2)
+            light.extend([(color, c.DRAW_ONE, None)] * 2)
+            light.extend([(color, c.REVERSE, None)] * 2)
+            light.extend([(color, c.SKIP, None)] * 2)
+            light.extend([(color, c.FLIP, None)] * 2)
+        light.extend([(None, None, c.CHOOSE)] * 4)
+        light.extend([(None, None, c.WILD_DRAW_TWO)] * 4)
+
+        for color in dark_colors:
+            for value in c.NUMBERS:
+                dark.extend([(color, value, None)] * 2)
+            dark.extend([(color, c.DRAW_FIVE, None)] * 2)
+            dark.extend([(color, c.REVERSE, None)] * 2)
+            dark.extend([(color, c.SKIP_EVERYONE, None)] * 2)
+            dark.extend([(color, c.FLIP, None)] * 2)
+        dark.extend([(None, None, c.CHOOSE)] * 4)
+        dark.extend([(None, None, c.DRAW_COLOR)] * 4)
+
+        shuffle(dark)
+        self.cards = [Card(*front, dark=back) for front, back in zip(light, dark)]
+        self.shuffle()
+
+    def flip(self):
+        for card in self.cards + self.graveyard:
+            card.flip()

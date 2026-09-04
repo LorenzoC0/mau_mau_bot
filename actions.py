@@ -86,7 +86,8 @@ def do_skip(bot, player, job_queue=None):
 
 def do_play_card(bot, player, result_id):
     """Plays the selected card and sends an update to the group if needed"""
-    card = c.from_str(result_id)
+    # Resolve the visible face back to the physical card in the hand.
+    card = next(card for card in player.cards if str(card) == result_id)
     player.play(card)
     game = player.game
     chat = game.chat
@@ -135,6 +136,7 @@ def do_draw(bot, player):
     """Does the drawing"""
     game = player.game
     draw_counter_before = game.draw_counter
+    draw_until_color_before = game.draw_until_color
 
     try:
         player.draw()
@@ -143,9 +145,7 @@ def do_draw(bot, player):
                    text=__("There are no more cards in the deck.",
                            multi=game.translate))
 
-    if (game.last_card.value == c.DRAW_TWO or
-        game.last_card.special == c.DRAW_FOUR) and \
-            draw_counter_before > 0:
+    if draw_counter_before > 0 or draw_until_color_before:
         game.turn()
 
 
@@ -161,6 +161,8 @@ def do_call_bluff(bot, player):
                    .format(name=player.prev.user.first_name))
 
         try:
+            if game.last_card.special == c.DRAW_COLOR:
+                game.draw_until_color = True
             player.prev.draw()
         except DeckEmptyError:
             send_async(bot, player.game.chat.id,
@@ -168,18 +170,30 @@ def do_call_bluff(bot, player):
                                multi=game.translate))
 
     else:
-        game.draw_counter += 2
-        send_async(bot, chat.id,
-                   text=__("{name1} didn't bluff! Giving 6 cards to {name2}",
-                           multi=game.translate)
-                   .format(name1=player.prev.user.first_name,
-                           name2=player.user.first_name))
-        try:
-            player.draw()
-        except DeckEmptyError:
-            send_async(bot, player.game.chat.id,
-                       text=__("There are no more cards in the deck.",
-                               multi=game.translate))
+        if game.last_card.special == c.DRAW_COLOR:
+            game.draw_until_color = True
+            try:
+                player.draw()
+                game.draw_counter = 2
+                player.draw()
+            except DeckEmptyError:
+                send_async(bot, player.game.chat.id,
+                           text=__("There are no more cards in the deck.",
+                                   multi=game.translate))
+            message = __("{name1} didn't bluff! Giving cards to {name2}",
+                          multi=game.translate)
+        else:
+            game.draw_counter += 2
+            try:
+                player.draw()
+            except DeckEmptyError:
+                send_async(bot, player.game.chat.id,
+                           text=__("There are no more cards in the deck.",
+                                   multi=game.translate))
+            message = __("{name1} didn't bluff! Giving 6 cards to {name2}",
+                          multi=game.translate)
+        send_async(bot, chat.id, text=message.format(
+            name1=player.prev.user.first_name, name2=player.user.first_name))
 
     game.turn()
 

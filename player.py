@@ -117,6 +117,10 @@ class Player(object):
         try:
             for _ in range(_amount):
                 self.cards.append(self.game.deck.draw())
+            if self.game.draw_until_color:
+                while self.cards[-1].color != self.game.last_card.color:
+                    self.cards.append(self.game.deck.draw())
+                self.game.draw_until_color = False
 
         except DeckEmptyError:
             raise
@@ -164,8 +168,18 @@ class Player(object):
         last = self.game.last_card
         self.logger.debug("Checking card " + str(card))
 
-        if (card.color != last.color and card.value != last.value and
-                not card.special):
+        if self.game.mode == 'flip' and \
+                (self.game.draw_counter or self.game.draw_until_color):
+            if last.value in (c.DRAW_TWO, c.DRAW_ONE, c.DRAW_FIVE) or \
+                    last.special in (c.DRAW_FOUR, c.WILD_DRAW_TWO,
+                                     c.DRAW_COLOR):
+                return False
+
+        if card.special in (c.CHOOSE, c.DRAW_FOUR, c.WILD_DRAW_TWO,
+                            c.DRAW_COLOR):
+            is_playable = not (last.special == c.DRAW_FOUR and
+                               self.game.draw_counter)
+        elif card.color != last.color and card.value != last.value:
             self.logger.debug("Card's color or value doesn't match")
             is_playable = False
         elif last.value == c.DRAW_TWO and not \
@@ -175,8 +189,9 @@ class Player(object):
         elif last.special == c.DRAW_FOUR and self.game.draw_counter:
             self.logger.debug("Player has to draw and can't counter")
             is_playable = False
-        elif (last.special == c.CHOOSE or last.special == c.DRAW_FOUR) and \
-                (card.special == c.CHOOSE or card.special == c.DRAW_FOUR):
+        elif last.special in (c.CHOOSE, c.DRAW_FOUR, c.WILD_DRAW_TWO,
+                              c.DRAW_COLOR) and card.special in \
+                (c.CHOOSE, c.DRAW_FOUR, c.WILD_DRAW_TWO, c.DRAW_COLOR):
             self.logger.debug("Can't play colorchooser on another one")
             is_playable = False
         elif not last.color:

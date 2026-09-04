@@ -24,6 +24,10 @@ BLUE = 'b'
 GREEN = 'g'
 YELLOW = 'y'
 BLACK = 'x'
+PINK = 'p'
+TEAL = 't'
+ORANGE = 'o'
+PURPLE = 'u'
 
 COLORS = (RED, BLUE, GREEN, YELLOW)
 
@@ -32,6 +36,10 @@ COLOR_ICONS = {
     BLUE: '💙',
     GREEN: '💚',
     YELLOW: '💛',
+    PINK: '💗',
+    TEAL: '🩵',
+    ORANGE: '🧡',
+    PURPLE: '💜',
     BLACK: '⬛️'
 }
 
@@ -47,11 +55,18 @@ SEVEN = '7'
 EIGHT = '8'
 NINE = '9'
 DRAW_TWO = 'draw'
+DRAW_ONE = 'draw_one'
+DRAW_FIVE = 'draw_five'
+DRAW_COLOR = 'draw_color'
+WILD_DRAW_TWO = 'wild_draw_two'
 REVERSE = 'reverse'
 SKIP = 'skip'
+SKIP_EVERYONE = 'skip_everyone'
+FLIP = 'flip'
 
 VALUES = (ZERO, ONE, TWO, THREE, FOUR, FIVE, SIX, SEVEN, EIGHT, NINE, DRAW_TWO,
           REVERSE, SKIP)
+NUMBERS = (ONE, TWO, THREE, FOUR, FIVE, SIX, SEVEN, EIGHT, NINE)
 WILD_VALUES = (ONE, TWO, THREE, FOUR, FIVE, DRAW_TWO, REVERSE, SKIP)
 
 # Special cards
@@ -59,6 +74,7 @@ CHOOSE = 'colorchooser'
 DRAW_FOUR = 'draw_four'
 
 SPECIALS = (CHOOSE, DRAW_FOUR)
+FLIP_SPECIALS = (CHOOSE, DRAW_FOUR, DRAW_COLOR, WILD_DRAW_TWO)
 
 CARDS_CLASSIC = {
     "normal": {
@@ -312,10 +328,36 @@ STICKERS_GREY = {
 class Card(object):
     """This class represents an UNO card"""
 
-    def __init__(self, color, value, special=None):
-        self.color = color
-        self.value = value
-        self.special = special
+    def __init__(self, color, value, special=None, dark=None):
+        """Create a card, optionally with an UNO Flip opposite face."""
+        self._light = (color, value, special)
+        self._dark = dark
+        self.side = 'light'
+        self._color_override = None
+
+    def _face(self):
+        return self._dark if self.side == 'dark' and self._dark else self._light
+
+    @property
+    def color(self):
+        return self._color_override or self._face()[0]
+
+    @color.setter
+    def color(self, value):
+        self._color_override = value
+
+    @property
+    def value(self):
+        return self._face()[1]
+
+    @property
+    def special(self):
+        return self._face()[2]
+
+    def flip(self):
+        if self._dark:
+            self.side = 'dark' if self.side == 'light' else 'light'
+            self._color_override = None
 
     def __str__(self):
         if self.special:
@@ -343,7 +385,7 @@ class Card(object):
 
 def from_str(string):
     """Decodes a Card object from a string"""
-    if string not in SPECIALS:
+    if string not in FLIP_SPECIALS:
         color, value = string.split('_')
         return Card(color, value)
     else:

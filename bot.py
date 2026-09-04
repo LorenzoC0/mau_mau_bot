@@ -36,7 +36,8 @@ from errors import (NoGameInChatError, LobbyClosedError, AlreadyJoinedError,
 from internationalization import _, __, user_locale, game_locales
 from results import (add_call_bluff, add_choose_color, add_draw, add_gameinfo,
                      add_no_game, add_not_started, add_other_cards, add_pass,
-                     add_card, add_mode_classic, add_mode_fast, add_mode_wild, add_mode_text)
+                     add_card, add_mode_classic, add_mode_fast, add_mode_wild, add_mode_text,
+                     add_mode_flip)
 from shared_vars import gm, updater, dispatcher
 from simple_commands import help_handler
 from start_bot import start_bot
@@ -386,9 +387,13 @@ def start_game(update: Update, context: CallbackContext):
             def send_first():
                 """Send the first card and player"""
 
-                context.bot.sendSticker(chat.id,
-                                sticker=c.STICKERS[str(game.last_card)],
-                                timeout=TIMEOUT)
+                if game.mode == 'flip':
+                    context.bot.sendMessage(chat.id, text=repr(game.last_card),
+                                            timeout=TIMEOUT)
+                else:
+                    context.bot.sendSticker(chat.id,
+                                    sticker=c.STICKERS[str(game.last_card)],
+                                    timeout=TIMEOUT)
 
                 context.bot.sendMessage(chat.id,
                                 text=first_message,
@@ -595,6 +600,7 @@ def reply_to_query(update: Update, context: CallbackContext):
                 add_mode_fast(results)
                 add_mode_wild(results)
                 add_mode_text(results)
+                add_mode_flip(results)
             else:
                 add_not_started(results)
 
@@ -610,7 +616,9 @@ def reply_to_query(update: Update, context: CallbackContext):
                 else:
                     add_pass(results, game)
 
-                if game.last_card.special == c.DRAW_FOUR and game.draw_counter:
+                if game.last_card.special in (c.DRAW_FOUR, c.WILD_DRAW_TWO,
+                                               c.DRAW_COLOR) and \
+                        (game.draw_counter or game.draw_until_color):
                     add_call_bluff(results, game)
 
                 playable = player.playable_cards()
@@ -687,7 +695,7 @@ def process_result(update: Update, context: CallbackContext):
         do_draw(context.bot, player)
     elif result_id == 'pass':
         game.turn()
-    elif result_id in c.COLORS:
+    elif result_id in game.colors:
         game.choose_color(result_id)
     else:
         reset_waiting_time(context.bot, player)

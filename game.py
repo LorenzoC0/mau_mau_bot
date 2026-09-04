@@ -43,6 +43,8 @@ class Game(object):
     def __init__(self, chat):
         self.chat = chat
         self.last_card = None
+        self.side = 'light'
+        self.draw_until_color = False
 
         self.deck = Deck()
 
@@ -64,7 +66,9 @@ class Game(object):
         return players
 
     def start(self):
-        if self.mode == None or self.mode != "wild":
+        if self.mode == 'flip':
+            self.deck._fill_flip_()
+        elif self.mode == None or self.mode != "wild":
             self.deck._fill_classic_()
         else:
             self.deck._fill_wild_()
@@ -78,6 +82,11 @@ class Game(object):
     def reverse(self):
         """Reverses the direction of game"""
         self.reversed = not self.reversed
+
+    @property
+    def colors(self):
+        return (c.BLUE, c.GREEN, c.RED, c.YELLOW) if self.side == 'light' else \
+            (c.PINK, c.TEAL, c.ORANGE, c.PURPLE)
 
     def turn(self):
         """Marks the turn as over and change the current player"""
@@ -116,6 +125,15 @@ class Game(object):
         elif card.special == c.DRAW_FOUR:
             self.draw_counter += 4
             self.logger.debug("Draw counter increased by 4")
+        elif card.special == c.WILD_DRAW_TWO:
+            self.draw_counter += 2
+        elif card.value == c.DRAW_ONE:
+            self.draw_counter += 1
+        elif card.value == c.DRAW_FIVE:
+            self.draw_counter += 5
+        elif card.value == c.SKIP_EVERYONE:
+            for _ in range(max(0, len(self.players) - 1)):
+                self.turn()
         elif card.value == c.DRAW_TWO:
             self.draw_counter += 2
             self.logger.debug("Draw counter increased by 2")
@@ -126,8 +144,22 @@ class Game(object):
             else:
                 self.reverse()
 
+        if card.special == c.DRAW_COLOR:
+            self.draw_until_color = True
+
+        if card.value == c.FLIP:
+            self.deck.dismiss(card)
+            self.deck.flip()
+            for player in self.players:
+                for hand_card in player.cards:
+                    hand_card.flip()
+            self.side = 'dark' if self.side == 'light' else 'light'
+            # The played Flip card is now beneath the previous discard card.
+            self.last_card = self.deck.graveyard[-2]
+
         # Don't turn if the current player has to choose a color
-        if card.special not in (c.CHOOSE, c.DRAW_FOUR):
+        if card.special not in (c.CHOOSE, c.DRAW_FOUR, c.WILD_DRAW_TWO,
+                                c.DRAW_COLOR):
             self.turn()
         else:
             self.logger.debug("Choosing Color...")
