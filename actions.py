@@ -86,8 +86,14 @@ def do_skip(bot, player, job_queue=None):
 
 def do_play_card(bot, player, result_id):
     """Plays the selected card and sends an update to the group if needed"""
-    # Resolve the visible face back to the physical card in the hand.
-    card = next(card for card in player.cards if str(card) == result_id)
+    # Resolve the visible face among the currently playable physical cards.
+    # This matters after drawing: an older equal-looking Flip card may have a
+    # different hidden face, but only the card just drawn can be played.
+    card = next((card for card in player.playable_cards()
+                 if str(card) == result_id), None)
+    if card is None:
+        logger.warning("Ignoring stale or unplayable card result %s", result_id)
+        return False
     player.play(card)
     game = player.game
     chat = game.chat
@@ -131,6 +137,8 @@ def do_play_card(bot, player, result_id):
 
             gm.end_game(chat, user)
 
+    return True
+
 
 def do_draw(bot, player):
     """Does the drawing"""
@@ -155,10 +163,18 @@ def do_call_bluff(bot, player):
     chat = game.chat
 
     if player.prev.bluffing:
+        if game.last_card.special == c.DRAW_COLOR:
+            message = __(
+                "Bluff called! {name} draws until the chosen color",
+                multi=game.translate)
+        else:
+            guilty_cards = (2 if game.last_card.special == c.WILD_DRAW_TWO
+                             else 4)
+            message = __(
+                "Bluff called! Giving {number} cards to {name}",
+                multi=game.translate).format(number=guilty_cards)
         send_async(bot, chat.id,
-                   text=__("Bluff called! Giving 4 cards to {name}",
-                           multi=game.translate)
-                   .format(name=player.prev.user.first_name))
+                   text=message.format(name=player.prev.user.first_name))
 
         try:
             if game.last_card.special == c.DRAW_COLOR:
@@ -183,19 +199,30 @@ def do_call_bluff(bot, player):
             message = __("{name1} didn't bluff! Giving cards to {name2}",
                           multi=game.translate)
         else:
-            game.draw_counter += 2
+            if game.last_card.special == c.WILD_DRAW_TWO:
+                # A failed Wild Draw Two challenge is +4 total, not +6.
+                game.draw_counter = 4
+                message = __(
+                    "{name1} didn't bluff! Giving 4 cards to {name2}",
+                    multi=game.translate)
+            else:
+                # Preserve the classic Wild Draw Four challenge: +4 + 2.
+                game.draw_counter += 2
+                message = __(
+                    "{name1} didn't bluff! Giving 6 cards to {name2}",
+                    multi=game.translate)
             try:
                 player.draw()
             except DeckEmptyError:
                 send_async(bot, player.game.chat.id,
                            text=__("There are no more cards in the deck.",
                                    multi=game.translate))
-            message = __("{name1} didn't bluff! Giving 6 cards to {name2}",
-                          multi=game.translate)
         send_async(bot, chat.id, text=message.format(
             name1=player.prev.user.first_name, name2=player.user.first_name))
 
-    game.turn()
+        # A failed challenge consumes the challenger's turn. After a
+        # successful challenge, instead, the challenger keeps the turn.
+        game.turn()
 
 
 def start_player_countdown(bot, game, job_queue):

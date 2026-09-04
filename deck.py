@@ -24,6 +24,7 @@ import logging
 import card as c
 from card import Card
 from errors import DeckEmptyError
+from flip_pairs import FLIP_PAIRS
 
 
 class Deck(object):
@@ -58,6 +59,11 @@ class Deck(object):
 
     def dismiss(self, card):
         """Returns a card to the deck"""
+        # After an UNO Flip, last_card points to the previous discard card,
+        # which is already in the graveyard. Do not add the same physical
+        # card twice: Deck.flip() must toggle every card exactly once.
+        if card and any(discarded is card for discarded in self.graveyard):
+            return
         if card and card.special:
             card.color = None
         if card:
@@ -66,6 +72,7 @@ class Deck(object):
     def _fill_classic_(self):
         # Fill deck with the classic card set
         self.cards.clear()
+        self.graveyard.clear()
         for color in c.COLORS:
             for value in c.VALUES:
                 self.cards.append(Card(color, value))
@@ -79,6 +86,7 @@ class Deck(object):
     def _fill_wild_(self):
         # Fill deck with a wild card set
         self.cards.clear()
+        self.graveyard.clear()
         for color in c.COLORS:
             for value in c.WILD_VALUES:
                 for _ in range(4):
@@ -91,33 +99,15 @@ class Deck(object):
     def _fill_flip_(self):
         """Build the 112 physical double-sided UNO Flip cards."""
         self.cards.clear()
-        light = []
-        dark = []
-        light_colors = (c.BLUE, c.GREEN, c.RED, c.YELLOW)
-        dark_colors = (c.PINK, c.TEAL, c.ORANGE, c.PURPLE)
+        self.graveyard.clear()
+        def make_face(face):
+            color, value = face
+            if value in c.FLIP_SPECIALS:
+                return (None, None, value)
+            return (color, value, None)
 
-        for color in light_colors:
-            for value in c.NUMBERS:
-                light.extend([(color, value, None)] * 2)
-            light.extend([(color, c.DRAW_ONE, None)] * 2)
-            light.extend([(color, c.REVERSE, None)] * 2)
-            light.extend([(color, c.SKIP, None)] * 2)
-            light.extend([(color, c.FLIP, None)] * 2)
-        light.extend([(None, None, c.CHOOSE)] * 4)
-        light.extend([(None, None, c.WILD_DRAW_TWO)] * 4)
-
-        for color in dark_colors:
-            for value in c.NUMBERS:
-                dark.extend([(color, value, None)] * 2)
-            dark.extend([(color, c.DRAW_FIVE, None)] * 2)
-            dark.extend([(color, c.REVERSE, None)] * 2)
-            dark.extend([(color, c.SKIP_EVERYONE, None)] * 2)
-            dark.extend([(color, c.FLIP, None)] * 2)
-        dark.extend([(None, None, c.CHOOSE)] * 4)
-        dark.extend([(None, None, c.DRAW_COLOR)] * 4)
-
-        shuffle(dark)
-        self.cards = [Card(*front, dark=back) for front, back in zip(light, dark)]
+        self.cards = [Card(*make_face(light), dark=make_face(dark))
+                      for light, dark in FLIP_PAIRS]
         self.shuffle()
 
     def flip(self):

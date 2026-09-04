@@ -113,25 +113,36 @@ class Player(object):
     def draw(self):
         """Draws 1+ cards from the deck, depending on the draw counter"""
         _amount = self.game.draw_counter or 1
+        draw_until_color = self.game.draw_until_color
 
         try:
             for _ in range(_amount):
                 self.cards.append(self.game.deck.draw())
-            if self.game.draw_until_color:
+            if draw_until_color:
                 while self.cards[-1].color != self.game.last_card.color:
                     self.cards.append(self.game.deck.draw())
-                self.game.draw_until_color = False
 
         except DeckEmptyError:
             raise
 
         finally:
             self.game.draw_counter = 0
+            # The penalty has been attempted even if the deck ran out. Leaving
+            # this flag set would block every card for the following player.
+            if draw_until_color:
+                self.game.draw_until_color = False
             self.drew = True
 
     def play(self, card):
         """Plays a card and removes it from hand"""
-        self.cards.remove(card)
+        # Equal visible faces may have different opposite faces in UNO Flip.
+        # Remove the selected physical object, not merely the first equal card.
+        for index, held_card in enumerate(self.cards):
+            if held_card is card:
+                self.cards.pop(index)
+                break
+        else:
+            raise ValueError("Card is not in this player's hand")
         self.game.play_card(card)
 
     def playable_cards(self):
@@ -146,14 +157,15 @@ class Player(object):
         if self.drew:
             cards = self.cards[-1:]
 
-        # You may only play a +4 if you have no cards of the correct color
-        self.bluffing = False
+        # Wild draw cards may only be played legally when the whole hand has
+        # no card matching the current color. This must not be restricted to
+        # the last drawn card when ``self.drew`` is true.
+        self.bluffing = bool(last.color) and any(
+            card.color == last.color for card in self.cards)
         for card in cards:
             if self._card_playable(card):
                 self.logger.debug("Matching!")
                 playable.append(card)
-
-                self.bluffing = (self.bluffing or card.color == last.color)
 
         # You may not play a chooser or +4 as your last card
         if len(self.cards) == 1 and self.cards[0].special:
@@ -168,12 +180,18 @@ class Player(object):
         last = self.game.last_card
         self.logger.debug("Checking card " + str(card))
 
-        if self.game.mode == 'flip' and \
+        if self.game.is_flip and \
                 (self.game.draw_counter or self.game.draw_until_color):
             if last.value in (c.DRAW_TWO, c.DRAW_ONE, c.DRAW_FIVE) or \
                     last.special in (c.DRAW_FOUR, c.WILD_DRAW_TWO,
                                      c.DRAW_COLOR):
                 return False
+
+        # Flipping the discard pile can expose the opposite face of an old
+        # wild card. No player chose a color for that passive top card, so it
+        # behaves as an unrestricted wild and must not lock colored cards out.
+        if not last.color and last.special in c.FLIP_SPECIALS:
+            return True
 
         if card.special in (c.CHOOSE, c.DRAW_FOUR, c.WILD_DRAW_TWO,
                             c.DRAW_COLOR):

@@ -138,6 +138,21 @@ class Test(unittest.TestCase):
 
         self.assertListEqual(p.playable_cards(), expected)
 
+    def test_passively_exposed_wild_accepts_any_color(self):
+        self.game.set_mode('flip')
+        p = Player(self.game, "Player 0")
+        exposed_wild = c.Card(c.RED, c.ONE,
+                              dark=(None, None, c.DRAW_COLOR))
+        exposed_wild.flip()
+        self.game.last_card = exposed_wild
+        p.cards = [c.Card(c.BLUE, '2', dark=(c.PINK, '3', None))]
+
+        playable = p.playable_cards()
+
+        self.assertEqual(len(playable), 1)
+        self.assertIs(playable[0], p.cards[0])
+        self.assertFalse(p.bluffing)
+
     def test_bluffing(self):
         p = Player(self.game, "Player 0")
         Player(self.game, "Player 01")
@@ -160,10 +175,26 @@ class Test(unittest.TestCase):
 
         p.playable_cards()
 
-        p.play(c.Card(None, None, c.DRAW_FOUR))
+        draw_four = next(card for card in p.cards
+                         if card.special == c.DRAW_FOUR)
+        p.play(draw_four)
         self.game.choose_color(c.GREEN)
 
         self.assertFalse(self.game.current_player.prev.bluffing)
+
+    def test_bluff_checks_the_whole_hand_after_drawing(self):
+        p = Player(self.game, "Player 0")
+        self.game.last_card = c.Card(c.RED, c.ONE)
+        matching = c.Card(c.RED, '5')
+        drawn_wild = c.Card(None, None, c.DRAW_FOUR)
+        p.cards = [matching, drawn_wild]
+        p.drew = True
+
+        playable = p.playable_cards()
+
+        self.assertTrue(p.bluffing)
+        self.assertEqual(len(playable), 1)
+        self.assertIs(playable[0], drawn_wild)
 
     def test_flip_deck_and_side_change(self):
         self.game.set_mode('flip')
@@ -172,6 +203,7 @@ class Test(unittest.TestCase):
         self.game.start()
 
         self.assertEqual(len(self.game.deck.cards), 111)
+        self.assertEqual(len(self.game.deck.graveyard), 0)
         self.assertEqual(self.game.side, 'light')
         self.assertTrue(all(card._dark for card in self.game.deck.cards))
 
@@ -184,3 +216,126 @@ class Test(unittest.TestCase):
 
         self.assertEqual(self.game.side, 'dark')
         self.assertEqual(self.game.last_card.color, c.PINK)
+
+    def test_flip_text_uses_the_same_physical_deck(self):
+        self.game.set_mode('flip_text')
+        Player(self.game, "Player 0")
+        Player(self.game, "Player 1")
+
+        self.game.start()
+
+        self.assertTrue(self.game.is_flip)
+        self.assertEqual(len(self.game.deck.cards), 111)
+        self.assertTrue(all(card._dark for card in self.game.deck.cards))
+
+    def test_two_flips_restore_the_original_side(self):
+        self.game.set_mode('flip')
+        p0 = Player(self.game, "Player 0")
+        Player(self.game, "Player 1")
+        self.game.start()
+        original_top = self.game.last_card
+
+        first_flip = c.Card(c.RED, c.FLIP,
+                            dark=(c.PINK, c.FLIP, None))
+        p0.cards = [first_flip,
+                    c.Card(c.RED, c.FLIP, dark=(c.PINK, c.FLIP, None))]
+        self.game.current_player = p0
+
+        p0.play(p0.cards[0])
+        self.assertEqual(self.game.side, 'dark')
+        p0 = self.game.current_player
+        p0.cards.append(c.Card(c.PINK, c.FLIP,
+                               dark=(c.RED, c.FLIP, None)))
+        p0.cards[-1].side = 'dark'
+        p0.play(p0.cards[-1])
+
+        self.assertEqual(self.game.side, 'light')
+        self.assertEqual(self.game.last_card.side, 'light')
+        self.assertIs(self.game.last_card, first_flip)
+        self.assertEqual(len(self.game.deck.graveyard), 2)
+
+    def test_draw_until_color_is_cleared_if_deck_runs_out(self):
+        from errors import DeckEmptyError
+
+        p = Player(self.game, "Player 0")
+        self.game.last_card = c.Card(c.RED, c.ONE)
+        self.game.draw_until_color = True
+        self.game.deck.cards = [c.Card(c.BLUE, '2')]
+
+        with self.assertRaises(DeckEmptyError):
+            p.draw()
+
+        self.assertFalse(self.game.draw_until_color)
+
+    def test_flip_reverses_the_physical_discard_pile(self):
+        self.game.set_mode('flip')
+        p0 = Player(self.game, "Player 0")
+        Player(self.game, "Player 1")
+
+        bottom = c.Card(c.RED, c.ONE, dark=(c.PINK, '2', None))
+        middle = c.Card(c.BLUE, '3', dark=(c.TEAL, '4', None))
+        top = c.Card(c.GREEN, '5', dark=(c.ORANGE, '6', None))
+        flip = c.Card(c.GREEN, c.FLIP, dark=(c.PURPLE, c.FLIP, None))
+        self.game.deck.graveyard = [bottom, middle]
+        self.game.last_card = top
+        self.game.current_player = p0
+        p0.cards = [flip]
+
+        p0.play(flip)
+
+        self.assertIs(self.game.last_card, bottom)
+        self.assertEqual(self.game.side, 'dark')
+        self.assertListEqual(
+            [id(card) for card in self.game.deck.graveyard],
+            [id(flip), id(top), id(middle)]
+        )
+        self.assertTrue(all(card.side == 'dark'
+                            for card in self.game.deck.graveyard))
+
+    def test_play_removes_the_selected_physical_card(self):
+        self.game.set_mode('flip')
+        p0 = Player(self.game, "Player 0")
+        Player(self.game, "Player 1")
+        self.game.last_card = c.Card(c.RED, c.ONE,
+                                     dark=(c.PINK, c.ONE, None))
+        self.game.current_player = p0
+
+        first = c.Card(c.RED, '2', dark=(c.PINK, '3', None))
+        selected = c.Card(c.RED, '2', dark=(c.TEAL, '4', None))
+        p0.cards = [first, selected]
+
+        p0.play(selected)
+
+        self.assertTrue(any(card is first for card in p0.cards))
+        self.assertFalse(any(card is selected for card in p0.cards))
+        self.assertIs(self.game.last_card, selected)
+
+    def test_flip_does_not_activate_its_hidden_action(self):
+        self.game.set_mode('flip')
+        p0 = Player(self.game, "Player 0")
+        p1 = Player(self.game, "Player 1")
+        self.game.last_card = c.Card(c.RED, c.ONE,
+                                     dark=(c.PINK, c.ONE, None))
+        self.game.current_player = p0
+
+        flip = c.Card(c.RED, c.FLIP,
+                      dark=(None, None, c.DRAW_COLOR))
+        p0.cards = [flip, c.Card(c.BLUE, '2',
+                                 dark=(c.TEAL, '3', None))]
+
+        p0.play(flip)
+
+        self.assertFalse(self.game.choosing_color)
+        self.assertIs(self.game.current_player, p1)
+
+    def test_game_state_is_not_shared_between_instances(self):
+        other = Game(None)
+        self.game.set_mode('flip')
+        self.game.reverse()
+        self.game.choosing_color = True
+        self.game.owner.append(123)
+
+        self.assertNotEqual(other.mode, 'flip')
+        self.assertFalse(other.reversed)
+        self.assertFalse(other.choosing_color)
+        self.assertNotIn(123, other.owner)

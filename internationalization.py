@@ -83,6 +83,11 @@ _ = _Underscore()
 
 def __(singular, plural=None, n=1, multi=False):
     """Translates text into all locales on the stack"""
+    # Scheduled jobs do not run inside the locale decorators. Falling back to
+    # the source language prevents them from sending an empty Telegram message.
+    if not _.locale_stack:
+        return singular if n == 1 or plural is None else plural
+
     translations = list()
 
     if not multi and len(set(_.locale_stack)) >= 1:
@@ -112,9 +117,10 @@ def user_locale(func):
         else:
             _.push('en_US')
 
-        result = func(update, context, *pargs, **kwargs)
-        _.pop()
-        return result
+        try:
+            return func(update, context, *pargs, **kwargs)
+        finally:
+            _.pop()
     return wrapped
 
 
@@ -123,6 +129,7 @@ def game_locales(func):
     @db_session
     def wrapped(update, context, *pargs, **kwargs):
         user, chat = _user_chat_from_update(update)
+        initial_stack_depth = len(_.locale_stack)
         player = gm.player_for_user_in_chat(user, chat)
         locales = list()
 
@@ -141,12 +148,11 @@ def game_locales(func):
                 _.push(loc)
                 locales.append(loc)
 
-        result = func(update, context, *pargs, **kwargs)
-
-        while _.code:
-            _.pop()
-
-        return result
+        try:
+            return func(update, context, *pargs, **kwargs)
+        finally:
+            while len(_.locale_stack) > initial_stack_depth:
+                _.pop()
     return wrapped
 
 

@@ -18,7 +18,13 @@ To run the bot yourself, you will need:
 - Install requirements (using a `virtualenv` is recommended): `pip install -r requirements.txt`
 
 You can change some gameplay parameters like turn times, minimum amount of players and default gamemode in `config.json`.
-Current gamemodes available: classic, fast and wild. Check the details with the `/modes` command.
+Current gamemodes available: classic, fast, wild, text, UNO Flip with
+stickers, and UNO Flip in text mode. Check the details with the `/modes`
+command.
+
+UNO Flip automatically falls back to text until its Telegram sticker IDs are
+available. The generated assets, publishing instructions and Bot API uploader
+are documented in [`images/flip/README.md`](images/flip/README.md).
 
 Then run the bot with `python3 bot.py`.
 

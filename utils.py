@@ -59,27 +59,49 @@ def display_color(color):
         return _("{emoji} Green").format(emoji='💚')
     if color == "y":
         return _("{emoji} Yellow").format(emoji='💛')
+    if color == "p":
+        return _("{emoji} Pink").format(emoji='💗')
+    if color == "t":
+        return _("{emoji} Teal").format(emoji='🩵')
+    if color == "o":
+        return _("{emoji} Orange").format(emoji='🧡')
+    if color == "u":
+        return _("{emoji} Purple").format(emoji='💜')
 
 
 def display_color_group(color, game):
     """ Convert a color code to actual color name """
     if color == "r":
-        return __("{emoji} Red", game.translate).format(
+        return __("{emoji} Red", multi=game.translate).format(
             emoji='❤️')
     if color == "b":
-        return __("{emoji} Blue", game.translate).format(
+        return __("{emoji} Blue", multi=game.translate).format(
             emoji='💙')
     if color == "g":
-        return __("{emoji} Green", game.translate).format(
+        return __("{emoji} Green", multi=game.translate).format(
             emoji='💚')
     if color == "y":
-        return __("{emoji} Yellow", game.translate).format(
+        return __("{emoji} Yellow", multi=game.translate).format(
             emoji='💛')
+    if color == "p":
+        return __("{emoji} Pink", multi=game.translate).format(emoji='💗')
+    if color == "t":
+        return __("{emoji} Teal", multi=game.translate).format(emoji='🩵')
+    if color == "o":
+        return __("{emoji} Orange", multi=game.translate).format(emoji='🧡')
+    if color == "u":
+        return __("{emoji} Purple", multi=game.translate).format(emoji='💜')
 
 
-def error(update: Update, context: CallbackContext):
+def error(update: Update, context: CallbackContext, exception=None):
     """Simple error handler"""
-    logger.exception(context.error)
+    exception = exception or getattr(context, 'error', None)
+    if exception:
+        logger.error("Unhandled exception while processing an update",
+                     exc_info=(type(exception), exception,
+                               exception.__traceback__))
+    else:
+        logger.error("Unknown error while processing an update")
 
 
 def send_async(bot, *args, **kwargs):

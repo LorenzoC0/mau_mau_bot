@@ -42,6 +42,18 @@ class Game(object):
 
     def __init__(self, chat):
         self.chat = chat
+        self.current_player = None
+        self.reversed = False
+        self.choosing_color = False
+        self.started = False
+        self.draw_counter = 0
+        self.players_won = 0
+        self.starter = None
+        self.mode = DEFAULT_GAMEMODE
+        self.job = None
+        self.owner = list(ADMIN_LIST or [])
+        self.open = OPEN_LOBBY
+        self.translate = ENABLE_TRANSLATIONS
         self.last_card = None
         self.side = 'light'
         self.draw_until_color = False
@@ -65,8 +77,13 @@ class Game(object):
             itplayer = itplayer.next
         return players
 
+    @property
+    def is_flip(self):
+        """Whether this game uses UNO Flip rules, regardless of presentation."""
+        return self.mode in ('flip', 'flip_text')
+
     def start(self):
-        if self.mode == 'flip':
+        if self.is_flip:
             self.deck._fill_flip_()
         elif self.mode == None or self.mode != "wild":
             self.deck._fill_classic_()
@@ -101,14 +118,23 @@ class Game(object):
         if not self.deck.cards:
             self.set_mode(DEFAULT_GAMEMODE)
 
-        # The first card should not be a special card
-        while not self.last_card or self.last_card.special:
-            self.last_card = self.deck.draw()
-            # If the card drawn was special, return it to the deck and loop again
-            if self.last_card.special:
-                self.deck.dismiss(self.last_card)
+        rejected = []
+        while True:
+            first_card = self.deck.draw()
+            is_flip_action = self.is_flip and \
+                (first_card.special or first_card.value not in c.NUMBERS)
+            if first_card.special or is_flip_action:
+                rejected.append(first_card)
+                continue
+            break
 
-        self.play_card(self.last_card)
+        # Rejected opening cards belong to the draw pile, not the discard pile.
+        self.deck.cards.extend(rejected)
+        self.deck.shuffle()
+
+        # There is no previous discard when the opening card is placed.
+        self.last_card = None
+        self.play_card(first_card)
 
     def play_card(self, card):
         """
@@ -118,48 +144,52 @@ class Game(object):
         """
         self.deck.dismiss(self.last_card)
         self.last_card = card
+        played_value = card.value
+        played_special = card.special
 
         self.logger.info("Playing card " + repr(card))
-        if card.value == c.SKIP:
+        if played_value == c.SKIP:
             self.turn()
-        elif card.special == c.DRAW_FOUR:
+        elif played_special == c.DRAW_FOUR:
             self.draw_counter += 4
             self.logger.debug("Draw counter increased by 4")
-        elif card.special == c.WILD_DRAW_TWO:
+        elif played_special == c.WILD_DRAW_TWO:
             self.draw_counter += 2
-        elif card.value == c.DRAW_ONE:
+        elif played_value == c.DRAW_ONE:
             self.draw_counter += 1
-        elif card.value == c.DRAW_FIVE:
+        elif played_value == c.DRAW_FIVE:
             self.draw_counter += 5
-        elif card.value == c.SKIP_EVERYONE:
+        elif played_value == c.SKIP_EVERYONE:
             for _ in range(max(0, len(self.players) - 1)):
                 self.turn()
-        elif card.value == c.DRAW_TWO:
+        elif played_value == c.DRAW_TWO:
             self.draw_counter += 2
             self.logger.debug("Draw counter increased by 2")
-        elif card.value == c.REVERSE:
+        elif played_value == c.REVERSE:
             # Special rule for two players
             if self.current_player == self.current_player.next.next:
                 self.turn()
             else:
                 self.reverse()
 
-        if card.special == c.DRAW_COLOR:
+        if played_special == c.DRAW_COLOR:
             self.draw_until_color = True
 
-        if card.value == c.FLIP:
+        if played_value == c.FLIP:
             self.deck.dismiss(card)
             self.deck.flip()
+            # Flipping a physical pile reverses its order. Keep the newly
+            # exposed top card outside the recyclable discard pile.
+            self.deck.graveyard.reverse()
+            self.last_card = self.deck.graveyard.pop()
             for player in self.players:
                 for hand_card in player.cards:
                     hand_card.flip()
             self.side = 'dark' if self.side == 'light' else 'light'
-            # The played Flip card is now beneath the previous discard card.
-            self.last_card = self.deck.graveyard[-2]
 
         # Don't turn if the current player has to choose a color
-        if card.special not in (c.CHOOSE, c.DRAW_FOUR, c.WILD_DRAW_TWO,
-                                c.DRAW_COLOR):
+        if played_special not in (c.CHOOSE, c.DRAW_FOUR, c.WILD_DRAW_TWO,
+                                  c.DRAW_COLOR):
             self.turn()
         else:
             self.logger.debug("Choosing Color...")

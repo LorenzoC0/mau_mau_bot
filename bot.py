@@ -37,7 +37,8 @@ from internationalization import _, __, user_locale, game_locales
 from results import (add_call_bluff, add_choose_color, add_draw, add_gameinfo,
                      add_no_game, add_not_started, add_other_cards, add_pass,
                      add_card, add_mode_classic, add_mode_fast, add_mode_wild, add_mode_text,
-                     add_mode_flip)
+                     add_mode_flip, add_mode_flip_text)
+from flip_stickers import get_flip_sticker
 from shared_vars import gm, updater, dispatcher
 from simple_commands import help_handler
 from start_bot import start_bot
@@ -329,10 +330,13 @@ def status_update(update: Update, context: CallbackContext):
 
     if update.message.left_chat_member:
         user = update.message.left_chat_member
+        player = gm.player_for_user_in_chat(user, chat)
+        if not player:
+            return
+        game = player.game
 
         try:
             gm.leave_game(user, chat)
-            game = gm.player_for_user_in_chat(user, chat).game
 
         except NoGameInChatError:
             pass
@@ -387,7 +391,12 @@ def start_game(update: Update, context: CallbackContext):
             def send_first():
                 """Send the first card and player"""
 
-                if game.mode == 'flip':
+                flip_sticker = (get_flip_sticker(game.last_card, game.side)
+                                if game.mode == 'flip' else None)
+                if flip_sticker:
+                    context.bot.sendSticker(chat.id, sticker=flip_sticker,
+                                            timeout=TIMEOUT)
+                elif game.is_flip:
                     context.bot.sendMessage(chat.id, text=repr(game.last_card),
                                             timeout=TIMEOUT)
                 else:
@@ -601,6 +610,7 @@ def reply_to_query(update: Update, context: CallbackContext):
                 add_mode_wild(results)
                 add_mode_text(results)
                 add_mode_flip(results)
+                add_mode_flip_text(results)
             else:
                 add_not_started(results)
 
@@ -673,19 +683,25 @@ def process_result(update: Update, context: CallbackContext):
 
     if result_id in ('hand', 'gameinfo', 'nogame'):
         return
-    elif result_id.startswith('mode_'):
-        # First 5 characters are 'mode_', the rest is the gamemode.
-        mode = result_id[5:]
-        game.set_mode(mode)
-        logger.info("Gamemode changed to {mode}".format(mode = mode))
-        send_async(context.bot, chat.id, text=__("Gamemode changed to {mode}".format(mode = mode)))
-        return
     elif len(result_id) == 36:  # UUID result
         return
     elif int(anti_cheat) != last_anti_cheat:
         send_async(context.bot, chat.id,
                    text=__("Cheat attempt by {name}", multi=game.translate)
                    .format(name=display_name(player.user)))
+        return
+    elif result_id.startswith('mode_'):
+        # Mode selectors can survive in Telegram clients. Never let an old
+        # selector mutate a game that has already started.
+        if game.started or not user_is_creator(user, game):
+            return
+        # First 5 characters are 'mode_', the rest is the gamemode.
+        mode = result_id[5:]
+        game.set_mode(mode)
+        logger.info("Gamemode changed to {mode}".format(mode = mode))
+        send_async(context.bot, chat.id,
+                   text=__("Gamemode changed to {mode}",
+                           multi=game.translate).format(mode=mode))
         return
     elif result_id == 'call_bluff':
         reset_waiting_time(context.bot, player)
@@ -699,7 +715,8 @@ def process_result(update: Update, context: CallbackContext):
         game.choose_color(result_id)
     else:
         reset_waiting_time(context.bot, player)
-        do_play_card(context.bot, player, result_id)
+        if not do_play_card(context.bot, player, result_id):
+            return
 
     if game_is_running(game):
         nextplayer_message = (

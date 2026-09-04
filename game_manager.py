@@ -184,6 +184,8 @@ class GameManager(object):
             del self.chatid_games[chat.id]
 
     def player_for_user_in_chat(self, user, chat):
+        if user is None or chat is None:
+            return None
         players = self.userid_players.get(user.id, list())
         for player in players:
             if player.game.chat.id == chat.id:

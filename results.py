@@ -28,6 +28,7 @@ from telegram import InlineQueryResultArticle, InputTextMessageContent, \
 import card as c
 from utils import display_color, display_color_group, display_name
 from internationalization import _, __
+from flip_stickers import get_flip_sticker
 
 
 def add_choose_color(results, game):
@@ -143,10 +144,17 @@ def add_mode_text(results):
 
 
 def add_mode_flip(results):
-    """Add the UNO Flip mode selector."""
+    """Add the sticker-based UNO Flip mode selector."""
     results.append(InlineQueryResultArticle(
-        "mode_flip", title=_("🔄 UNO Flip mode"),
-        input_message_content=InputTextMessageContent(_('UNO Flip 🔄'))))
+        "mode_flip", title=_("🔄 UNO Flip mode (stickers)"),
+        input_message_content=InputTextMessageContent(_('UNO Flip stickers 🔄'))))
+
+
+def add_mode_flip_text(results):
+    """Add the textual UNO Flip mode selector."""
+    results.append(InlineQueryResultArticle(
+        "mode_flip_text", title=_("✍️ UNO Flip mode (text)"),
+        input_message_content=InputTextMessageContent(_('UNO Flip text ✍️'))))
     
     
 def add_draw(player, results):
@@ -205,12 +213,32 @@ def add_call_bluff(results, game):
 def add_card(game, card, results, can_play):
     """Add an option that represents a card"""
 
+    if game.is_flip:
+        sticker_id = None
+        if game.mode == 'flip':
+            sticker_id = get_flip_sticker(card, game.side, can_play)
+
+        if sticker_id:
+            result_id = str(card) if can_play else str(uuid4())
+            results.append(Sticker(result_id, sticker_file_id=sticker_id,
+                                   input_message_content=None if can_play else
+                                   game_info(game)))
+        else:
+            result_id = str(card) if can_play else str(uuid4())
+            results.append(InlineQueryResultArticle(
+                result_id, title=repr(card),
+                input_message_content=(
+                    InputTextMessageContent(
+                        "Card Played: {card}".format(card=repr(card)))
+                    if can_play else game_info(game))))
+        return
+
     if can_play:
-        if game.mode not in ("text", "flip"):
+        if game.mode != "text":
             results.append(
                 Sticker(str(card), sticker_file_id=c.STICKERS[str(card)])
         )
-        if game.mode in ("text", "flip"):
+        if game.mode == "text":
             results.append(
                 InlineQueryResultArticle(
                     str(card), title=repr(card),
@@ -218,14 +246,9 @@ def add_card(game, card, results, can_play):
                         "Card Played: {card}".format(card=repr(card))))
             )
     else:
-        if game.mode == "flip":
-            results.append(InlineQueryResultArticle(
-                str(uuid4()), title=repr(card),
-                input_message_content=game_info(game)))
-        else:
-            results.append(
-                Sticker(str(uuid4()), sticker_file_id=c.STICKERS_GREY[str(card)],
-                        input_message_content=game_info(game)))
+        results.append(
+            Sticker(str(uuid4()), sticker_file_id=c.STICKERS_GREY[str(card)],
+                    input_message_content=game_info(game)))
 
 
 def game_info(game):
